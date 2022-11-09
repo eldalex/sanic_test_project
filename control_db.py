@@ -3,8 +3,8 @@ from models import *
 import hashlib
 
 
-class Control_database():
-    '''класс управления бд через ОРМ'''
+class ControlDatabase:
+    """класс управления бд через ОРМ"""
 
     @staticmethod
     def create_tables():
@@ -12,6 +12,23 @@ class Control_database():
         Bills.create_table()
         Transactions.create_table()
         Products.create_table()
+        ControlDatabase.create_start_user('admin')
+        ControlDatabase.create_start_user('test_user')
+        ControlDatabase.create_start_user('disable_user',enable=False)
+
+    @staticmethod
+    def create_start_user(name, enable=True):
+        with pg_db.atomic() as transaction:
+            try:
+                user = Users()
+                user.user_name = name
+                user.user_pass = name
+                user.user_role = name
+                user.user_hash = hashlib.md5(bytes(user.user_name, 'utf-8')).hexdigest()
+                user.user_enable = enable
+                user.save()
+            except peewee.IntegrityError:
+                transaction.rollback()
 
     @staticmethod
     def create_user(user_name, user_pass):
@@ -36,13 +53,15 @@ class Control_database():
     def activate_user(user_hash):
         with pg_db.atomic() as transaction:
             try:
-                user = Users().get(Users.user_hash == user_hash)
-                user.user_enable = True
-                user.save()
+                try:
+                    user = Users().get(Users.user_hash == user_hash)
+                    user.user_enable = True
+                    user.save()
+                except:
+                    return {"status_code": 501, "result": f""}
                 return {"status_code": 200, "result": f"Пользователь активирован!"}
             except peewee.IntegrityError as e:
                 transaction.rollback()
-                error_saving = True
                 return {"status_code": 502, "result": f"Ошибка записи:\n{e.args}"}
 
     @staticmethod
@@ -77,7 +96,7 @@ class Control_database():
     def add_new_bill(user_id, bill_id):
         with pg_db.atomic() as transaction:
             try:
-                if Control_database.check_user_id(user_id):
+                if ControlDatabase.check_user_id(user_id):
                     bill = Bills()
                     bill.bill_id = bill_id
                     bill.user_id = user_id
@@ -86,9 +105,8 @@ class Control_database():
                     return {"status_code": 200, "result": "Счет создан!"}
                 else:
                     return {"status_code": 502, "result": "Пользователь отсутствует."}
-            except peewee.IntegrityError as e:
+            except peewee.IntegrityError:
                 transaction.rollback()
-                error_saving = True
                 return {"status_code": 501, "result": "Ошибка записи."}
 
     @staticmethod
@@ -99,7 +117,7 @@ class Control_database():
     @staticmethod
     def check_bill_id(bill_id):
         try:
-            bills = Bills.get(Bills.bill_id == bill_id)
+            Bills.get(Bills.bill_id == bill_id)
             exists = True
         except:
             exists = False
@@ -108,7 +126,7 @@ class Control_database():
     @staticmethod
     def check_product_id(product_id):
         try:
-            product = Products.get(Products.product_id == product_id)
+            Products.get(Products.product_id == product_id)
             exists = True
         except:
             exists = False
@@ -183,7 +201,7 @@ class Control_database():
     @staticmethod
     def check_is_enable(username):
         user = Users.get(Users.user_name == username)
-        if user.user_enable == True:
+        if user.user_enable:
             return True
         else:
             return False
@@ -207,7 +225,7 @@ class Control_database():
         user = Users.get(Users.user_name == username)
         with pg_db.atomic() as transaction:
             try:
-                if user.user_enable == True:
+                if user.user_enable:
                     user.user_enable = False
                     user.save()
                     result = {"status_code": 200, "result": "Пользователь деактивирован!"}
@@ -235,10 +253,10 @@ class Control_database():
                 return {"status_code": 501, "result": f"Ошибка записи:\n{e.args}"}
 
     @staticmethod
-    def update_product(id, header=None, description=None, price=None):
+    def update_product(prodict_id, header=None, description=None, price=None):
         with pg_db.atomic() as transaction:
             try:
-                product = Products.get(Products.product_id == id)
+                product = Products.get(Products.product_id == prodict_id)
                 if header:
                     product.product_header = header
                 if description:
@@ -252,14 +270,14 @@ class Control_database():
                 return {"status_code": 501, "result": f"Ошибка записи:\n{e.args}"}
 
     @staticmethod
-    def delete_product(id):
+    def delete_product(product_id):
         with pg_db.atomic() as transaction:
             try:
                 try:
-                    product = Products.get(Products.product_id == id)
+                    product = Products.get(Products.product_id == product_id)
                 except:
                     product = None
-                if product != None:
+                if product is not None:
                     name = product.product_header
                     product.delete_instance()
                     return {"status_code": 200, "result": f"Товар {name} Удалён!"}
